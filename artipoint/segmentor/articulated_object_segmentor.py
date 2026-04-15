@@ -7,12 +7,30 @@ from pathlib import Path
 import sys
 import os
 
-from hands_segmentation.hand_segmentor import HandSegmentor
-from utils.mobile_sam_segmentor import MobileSAMSegmenter
+from artipoint.hands_segmentation.hand_segmentor import HandSegmentor
+from artipoint.utils.mobile_sam_segmentor import MobileSAMSegmenter
 
 
 class ArticulatedObjectSegmentor:
     """Segmentation of articulated objects using hand detection and SAM."""
+
+    @staticmethod
+    def _resolve_path(path_value):
+        path = Path(path_value)
+        if path.is_absolute():
+            return str(path)
+
+        package_root = Path(__file__).resolve().parents[1]
+        candidates = [
+            Path.cwd() / path,
+            package_root.parent / path,
+            package_root / path,
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return str(candidate.resolve())
+
+        return str((Path.cwd() / path).resolve())
 
     def __init__(self, config):
         """
@@ -29,16 +47,18 @@ class ArticulatedObjectSegmentor:
 
         # Initialize Hand Segmentor
         self.hand_segmentor = HandSegmentor(
-            model_repo=config["hand_model_repo"],
+            model_repo=self._resolve_path(config["hand_model_repo"]),
             model_name=config["hand_model_name"],
-            model_checkpoint_path=config["hand_model_checkpoint_path"],
+            model_checkpoint_path=self._resolve_path(
+                config["hand_model_checkpoint_path"]
+            ),
             resize=config.get("hand_resize", (256, 256)),
             use_cuda=config.get("use_cuda", True),
         )
 
         # Initialize MobileSAMSegmenter
         sam_config = {
-            "checkpoint": config["sam_checkpoint"],
+            "checkpoint": self._resolve_path(config["sam_checkpoint"]),
             "model_type": config.get("sam_model_type", "vit_t"),
             "device": self.device,
         }

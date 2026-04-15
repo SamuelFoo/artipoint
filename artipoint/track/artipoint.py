@@ -29,7 +29,7 @@ class ArtiPoint:
     def __init__(self, cfg: DictConfig):
         self.cfg = cfg
         self.arti4d_dataset = self.load_dataset()
-        # self.azure_dataset = None
+        self.azure_dataset = None
         config_segmentor = {
             "hand_model_repo": cfg.segmentation.hand_model_repo,
             "hand_model_name": cfg.segmentation.hand_model_name,
@@ -837,10 +837,10 @@ class ArtiPoint:
                 self.scene_pcd,
                 axis_segments,
                 motion_center_segments,
-                # cam_poses=self.camera_poses,
-                # save_frames=True,
-                # save_video=True,
-                # output_dir=output_dir,
+                cam_poses=self.camera_poses,
+                save_frames=True,
+                save_video=True,
+                output_dir=output_dir,
             )
 
     def estimate_motion(self, pairs, world_frame=None, config=None):

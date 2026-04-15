@@ -35,6 +35,7 @@ def hand_segmentor(pretrained=True, *args, **kwargs):
             map_location=torch.device("cuda"),
             *args,
             **kwargs,
+            weights_only=False,
         )
     return model
 

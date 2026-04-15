@@ -212,7 +212,7 @@ def visualize_trajectory(
 
             # Save frame
             frame_path = os.path.join(output_dir, f"{output_prefix}{i:04d}.png")
-            vis.capture_screen_image(frame_path)
+            vis.capture_screen_image(frame_path, do_render=True)
             frame_files.append(frame_path)
             print(f"Saved frame {i+1}/{len(cam_poses)} to {frame_path}")
     else:
@@ -754,18 +754,21 @@ def plot_3d_tracks(
 
         vis.poll_events()
         vis.update_renderer()
-        vis.run()
+        if not save_frames:
+            time.sleep(1.0 / max(fps, 1))
 
         # Save frame if requested
         if save_frames and output_dir is not None:
             frame_path = os.path.join(output_dir, f"{output_prefix}{t:04d}.png")
-            vis.capture_screen_image(frame_path)
+            vis.capture_screen_image(frame_path, do_render=True)
             frame_files.append(frame_path)
             print(f"Saved frame {t}/{num_frames} to {frame_path}")
 
         # Save the current camera parameters for the next frame
         camera_params = vis.get_view_control().convert_to_pinhole_camera_parameters()
 
+    if not save_frames:
+        vis.run()
     vis.destroy_window()
 
     # Compile video if requested
