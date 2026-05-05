@@ -14,6 +14,13 @@ import torch
 from scipy.spatial.transform import Rotation as R
 
 
+def has_display():
+    """Return True when a graphical display server is available."""
+    return any(
+        os.environ.get(var) for var in ("DISPLAY", "WAYLAND_DISPLAY", "MIR_SOCKET")
+    )
+
+
 def create_coordinate_frame(size=1.0):
     """Create a coordinate frame for visualization"""
     return o3d.geometry.TriangleMesh.create_coordinate_frame(size=size)
@@ -64,6 +71,94 @@ def calculate_zy_rotation_for_arrow(vec):
     return Rz, Ry
 
 
+def _create_motion_axis_arrow(axis, center):
+    """Create the same motion-axis arrow geometry used in visualize_trajectory."""
+    axis = np.asarray(axis, dtype=float)
+    center = np.asarray(center, dtype=float)
+    axis_norm = np.linalg.norm(axis)
+    if axis_norm < 1e-12:
+        return None
+
+    axis = axis / axis_norm
+    arrow_length = 0.5
+    cylinder_radius = 0.01
+    cone_radius = cylinder_radius * 2
+
+    arrow = o3d.geometry.TriangleMesh.create_arrow(
+        cylinder_radius=cylinder_radius,
+        cone_radius=cone_radius,
+        cylinder_height=arrow_length * 0.8,
+        cone_height=arrow_length * 0.2,
+    )
+
+    y_axis = np.array([0, 0, 1], dtype=float)
+    rotation_matrix = np.eye(3)
+    if not np.allclose(axis, y_axis):
+        rotation_axis = np.cross(y_axis, axis)
+        if np.linalg.norm(rotation_axis) > 1e-6:
+            rotation_axis = rotation_axis / np.linalg.norm(rotation_axis)
+            angle = np.arccos(np.clip(np.dot(y_axis, axis), -1.0, 1.0))
+            rotation_matrix = R.from_rotvec(rotation_axis * angle).as_matrix()
+
+    transform = np.eye(4)
+    transform[:3, :3] = rotation_matrix
+    transform[:3, 3] = center
+    arrow.transform(transform)
+    arrow.paint_uniform_color([1, 1, 0.5])
+    return arrow
+
+
+def _write_headless_trajectory_overlay(
+    free_trajectories,
+    pcd,
+    axes,
+    motion_centers,
+    output_dir,
+):
+    """Export a trajectory overlay PLY for headless environments."""
+    if output_dir is None:
+        return None
+
+    overlay = o3d.geometry.PointCloud()
+
+    if pcd is not None:
+        if isinstance(pcd, o3d.geometry.PointCloud):
+            merged = o3d.geometry.PointCloud(pcd)
+        else:
+            merged = pcd.sample_points_uniformly(number_of_points=200000)
+    else:
+        merged = o3d.geometry.PointCloud()
+
+    if free_trajectories:
+        for free_trajectory in free_trajectories:
+            for transform in free_trajectory:
+                frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.05)
+                frame.transform(transform)
+                overlay += frame.sample_points_uniformly(number_of_points=800)
+
+    if motion_centers is None and axes is not None:
+        motion_centers = [[0, 0, 0]] * len(axes)
+
+    if axes is not None:
+        for i, axis in enumerate(axes):
+            center = np.asarray(motion_centers[i], dtype=float)
+            arrow = _create_motion_axis_arrow(axis, center)
+            if arrow is None:
+                continue
+            overlay += arrow.sample_points_uniformly(number_of_points=2500)
+
+            sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.02)
+            sphere.translate(center)
+            sphere.paint_uniform_color([0.0, 0.0, 1.0])
+            overlay += sphere.sample_points_uniformly(number_of_points=500)
+
+    merged += overlay
+    overlay_path = os.path.join(output_dir, "trajectory_overlay.ply")
+    o3d.io.write_point_cloud(overlay_path, merged)
+    print(f"Headless trajectory overlay written to {overlay_path}")
+    return overlay_path
+
+
 def visualize_trajectory(
     free_trajectories=None,
     pcd=None,
@@ -96,17 +191,63 @@ def visualize_trajectory(
         resolution: (width, height) tuple for rendering resolution
     """
 
+    headless = not has_display()
+
     # Create output directory if saving frames
     if save_frames and output_dir is not None:
         os.makedirs(output_dir, exist_ok=True)
         print(f"Frames will be saved to {output_dir}")
 
+    # In headless environments, mirror visualize_dlab_articulation_axis.py:
+    # export geometry and skip interactive/windowed rendering.
+    if headless:
+        _write_headless_trajectory_overlay(
+            free_trajectories=free_trajectories,
+            pcd=pcd,
+            axes=axes,
+            motion_centers=motion_centers,
+            output_dir=output_dir,
+        )
+        if save_frames:
+            print(
+                "Headless Open3D frame capture is unavailable in this environment; "
+                "wrote a trajectory overlay PLY instead."
+            )
+        return []
+
     # Create Open3D visualization window with specified resolution
     vis = o3d.visualization.Visualizer()
-    vis.create_window(width=resolution[0], height=resolution[1])
+    window_created = vis.create_window(width=resolution[0], height=resolution[1])
+    if not window_created:
+        _write_headless_trajectory_overlay(
+            free_trajectories=free_trajectories,
+            pcd=pcd,
+            axes=axes,
+            motion_centers=motion_centers,
+            output_dir=output_dir,
+        )
+        print(
+            "Open3D could not create a visualization window; "
+            "falling back to trajectory overlay export."
+        )
+        return []
 
     # Set rendering options for better quality
     render_option = vis.get_render_option()
+    if render_option is None:
+        vis.destroy_window()
+        _write_headless_trajectory_overlay(
+            free_trajectories=free_trajectories,
+            pcd=pcd,
+            axes=axes,
+            motion_centers=motion_centers,
+            output_dir=output_dir,
+        )
+        print(
+            "Open3D did not expose render options; "
+            "falling back to trajectory overlay export."
+        )
+        return []
     render_option.point_size = 2.0
     render_option.background_color = np.array([1, 1, 1])  # White background
 
@@ -189,7 +330,7 @@ def visualize_trajectory(
             sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.02)
             sphere.translate(center)
             sphere.paint_uniform_color([0, 0, 1])
-            vis.add_geometry(arrow)
+            vis.add_geometry(sphere)
 
     # If camera poses are provided and we're saving frames, render from each pose
     frame_files = []

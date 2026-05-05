@@ -20,7 +20,11 @@ from ripl_articulation import solve_articulation_from_poses
 from artipoint.dataloader.arti4d import Arti4DDataset
 from artipoint.factor_graph.pose_est import PoseEstFactorGraph
 from artipoint.utils.articulation_helper import estimate_motion_point_bisectors
-from artipoint.utils.visualization import visualize_trajectory, plot_3d_tracks
+from artipoint.utils.visualization import (
+    has_display,
+    plot_3d_tracks,
+    visualize_trajectory,
+)
 from artipoint.segmentor.articulated_object_segmentor import ArticulatedObjectSegmentor
 from artipoint.track.arti_estimator import ArtiEstimator, smooth_trajectory_optimization
 
@@ -28,6 +32,7 @@ from artipoint.track.arti_estimator import ArtiEstimator, smooth_trajectory_opti
 class ArtiPoint:
     def __init__(self, cfg: DictConfig):
         self.cfg = cfg
+        self.has_display = has_display()
         self.arti4d_dataset = self.load_dataset()
         self.azure_dataset = None
         config_segmentor = {
@@ -211,12 +216,18 @@ class ArtiPoint:
                         rgb_vis = self.arti_segmentor.sam_segmenter.draw_points(
                             rgb_vis, all_points, [1] * len(all_points)
                         )
-                    cv2.imshow(
-                        "Segmented Image", cv2.cvtColor(rgb_vis, cv2.COLOR_RGB2BGR)
-                    )
-                    cv2.waitKey(1)
+                    if self.has_display:
+                        cv2.imshow(
+                            "Segmented Image", cv2.cvtColor(rgb_vis, cv2.COLOR_RGB2BGR)
+                        )
+                        cv2.waitKey(1)
+                    elif seg_idx == 0 and j == 0:
+                        loguru.logger.warning(
+                            "Skipping segmented-image preview because no display is available."
+                        )
 
-            cv2.destroyAllWindows()
+            if self.has_display:
+                cv2.destroyAllWindows()
             if queries is not None:
                 queries_segments.append(queries)
                 valid_segments.append((seg_start, seg_end))

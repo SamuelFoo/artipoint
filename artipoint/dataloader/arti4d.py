@@ -36,6 +36,9 @@ class Arti4DDataset:
         self.flipped = cfg.get("flipped", None)
         self.gt_poses = cfg.get("gt_poses", None)
         self.droid_slam = cfg.get("droid_slam", False)
+        self.camera_poses = None
+        self.articulated_objects = {}
+        self.reg_matrix = np.eye(4)
         self.data_list = self._get_data_list()
         self._load_parameters()
 

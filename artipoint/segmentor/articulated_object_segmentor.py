@@ -251,7 +251,7 @@ class ArticulatedObjectSegmentor:
             return []
 
         # Convert hand mask to proper format
-        if hand_mask.dtype == np.bool:
+        if hand_mask.dtype == np.bool_:
             hand_mask = hand_mask.astype(np.uint8)
 
         # Resize hand mask to match other masks
@@ -496,33 +496,35 @@ class ArticulatedObjectSegmentor:
 
     @staticmethod
     def play_hand_action_segments(
-        video_frames, segments, window_name="Hand Action Segment", frame_delay=100
+        video_frames,
+        segments,
+        save_dir="hand_segments",
     ):
         """
-        Plays the segments (windows) corresponding to hand-based actions from the video frames.
+        Save segment frames corresponding to hand-based actions as images.
 
         Args:
-            video_frames (list): List of dictionaries representing frames (each should contain "rgb" key).
-            segments (list of tuple): List of (start_index, end_index) tuples representing segments.
-            window_name (str): Name of the OpenCV window.
-            frame_delay (int): Delay in milliseconds between frames.
+            video_frames (list): List of RGB frames.
+            segments (list of tuple): List of (start_index, end_index) tuples.
+            save_dir (str): Output directory to save segment frames.
         """
+        os.makedirs(save_dir, exist_ok=True)
+        total_saved = 0
+
         for seg_idx, (start, end) in enumerate(segments):
+            segment_dir = os.path.join(save_dir, f"segment_{seg_idx:02d}")
+            os.makedirs(segment_dir, exist_ok=True)
             loguru.logger.info(
-                f"Playing segment {seg_idx+1}/{len(segments)} (frames {start} to {end}) with length {end - start + 1}"
+                f"Saving segment {seg_idx+1}/{len(segments)} (frames {start} to {end}) to {segment_dir}"
             )
-            cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+
             for idx in range(start, end + 1):
-                # Get the RGB frame, convert it to BGR for OpenCV.
                 frame_rgb = video_frames[idx]
                 frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+                out_path = os.path.join(segment_dir, f"frame_{idx:06d}.jpg")
+                cv2.imwrite(out_path, frame_bgr)
+                total_saved += 1
 
-                cv2.imshow(window_name, frame_bgr)
-                key = cv2.waitKey(frame_delay) & 0xFF
-                if key == ord("q"):
-                    # Skip the current segment if 'q' is pressed.
-                    print("Skipping current segment...")
-                    break
-            cv2.destroyWindow(window_name)
-
-        cv2.destroyAllWindows()
+        loguru.logger.info(
+            f"Saved {total_saved} hand-segment visualization frames to {save_dir}"
+        )
